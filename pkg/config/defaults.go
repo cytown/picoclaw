@@ -26,13 +26,15 @@ func DefaultConfig() *Config {
 	return &Config{
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
-				Workspace:           workspacePath,
-				RestrictToWorkspace: true,
-				Provider:            "",
-				Model:               "",
-				MaxTokens:           32768,
-				Temperature:         nil, // nil means use provider default
-				MaxToolIterations:   50,
+				Workspace:                 workspacePath,
+				RestrictToWorkspace:       true,
+				Provider:                  "",
+				Model:                     "",
+				MaxTokens:                 32768,
+				Temperature:               nil, // nil means use provider default
+				MaxToolIterations:         50,
+				SummarizeMessageThreshold: 20,
+				SummarizeTokenPercent:     75,
 			},
 		},
 		Bindings: []AgentBinding{},
@@ -306,6 +308,20 @@ func DefaultConfig() *Config {
 				APIKey:    "",
 			},
 
+			// Avian - https://avian.io
+			{
+				ModelName: "deepseek-v3.2",
+				Model:     "avian/deepseek/deepseek-v3.2",
+				APIBase:   "https://api.avian.io/v1",
+				APIKey:    "",
+			},
+			{
+				ModelName: "kimi-k2.5",
+				Model:     "avian/moonshotai/kimi-k2.5",
+				APIBase:   "https://api.avian.io/v1",
+				APIKey:    "",
+			},
+
 			// VLLM (local) - http://localhost:8000
 			{
 				ModelName: "local-model",
@@ -340,6 +356,13 @@ func DefaultConfig() *Config {
 					Enabled:    false,
 					APIKey:     "",
 					MaxResults: 5,
+				},
+				GLMSearch: GLMSearchConfig{
+					Enabled:      false,
+					APIKey:       "",
+					BaseURL:      "https://open.bigmodel.cn/api/paas/v4/web_search",
+					SearchEngine: "search_std",
+					MaxResults:   5,
 				},
 			},
 			Cron: CronToolsConfig{
