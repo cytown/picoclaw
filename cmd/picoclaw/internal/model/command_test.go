@@ -21,6 +21,22 @@ func initTest(t *testing.T) {
 	_ = os.Setenv("PICOCLAW_CONFIG", configPath)
 }
 
+// captureStdout captures stdout during the execution of fn and returns the captured output
+func captureStdout(fn func()) string {
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	fn()
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	return buf.String()
+}
+
 func TestNewModelCommand(t *testing.T) {
 	cmd := NewModelCommand()
 
@@ -42,11 +58,6 @@ func TestNewModelCommand(t *testing.T) {
 }
 
 func TestShowCurrentModel_WithDefaultModel(t *testing.T) {
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
@@ -59,14 +70,9 @@ func TestShowCurrentModel_WithDefaultModel(t *testing.T) {
 		},
 	}
 
-	showCurrentModel(cfg)
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	output := buf.String()
+	output := captureStdout(func() {
+		showCurrentModel(cfg)
+	})
 
 	assert.Contains(t, output, "Current default model: gpt-4")
 	assert.Contains(t, output, "Available models in your config:")
@@ -75,10 +81,6 @@ func TestShowCurrentModel_WithDefaultModel(t *testing.T) {
 }
 
 func TestShowCurrentModel_NoDefaultModel(t *testing.T) {
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
@@ -91,24 +93,15 @@ func TestShowCurrentModel_NoDefaultModel(t *testing.T) {
 		},
 	}
 
-	showCurrentModel(cfg)
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	output := buf.String()
+	output := captureStdout(func() {
+		showCurrentModel(cfg)
+	})
 
 	assert.Contains(t, output, "No default model is currently set.")
 	assert.Contains(t, output, "Available models in your config:")
 }
 
 func TestShowCurrentModel_BackwardCompatibility(t *testing.T) {
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
@@ -118,44 +111,26 @@ func TestShowCurrentModel_BackwardCompatibility(t *testing.T) {
 		ModelList: []config.ModelConfig{},
 	}
 
-	showCurrentModel(cfg)
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	output := buf.String()
+	output := captureStdout(func() {
+		showCurrentModel(cfg)
+	})
 
 	assert.Contains(t, output, "Current default model: legacy-model")
 }
 
 func TestListAvailableModels_Empty(t *testing.T) {
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
 	cfg := &config.Config{
 		ModelList: []config.ModelConfig{},
 	}
 
-	listAvailableModels(cfg)
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	output := buf.String()
+	output := captureStdout(func() {
+		listAvailableModels(cfg)
+	})
 
 	assert.Contains(t, output, "No models configured in model_list")
 }
 
 func TestListAvailableModels_WithModels(t *testing.T) {
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
@@ -169,14 +144,9 @@ func TestListAvailableModels_WithModels(t *testing.T) {
 		},
 	}
 
-	listAvailableModels(cfg)
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	output := buf.String()
+	output := captureStdout(func() {
+		listAvailableModels(cfg)
+	})
 
 	assert.NotEmpty(t, output)
 	assert.Contains(t, output, "> - gpt-4 (openai/gpt-4)")
@@ -199,20 +169,11 @@ func TestSetDefaultModel_ValidModel(t *testing.T) {
 		},
 	}
 
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
+	output := captureStdout(func() {
+		err := setDefaultModel(configPath, cfg, "new-model")
+		assert.NoError(t, err)
+	})
 
-	err := setDefaultModel(configPath, cfg, "new-model")
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	output := buf.String()
-
-	assert.NoError(t, err)
 	assert.Contains(t, output, "Default model changed from 'old-model' to 'new-model'")
 
 	// Verify config was updated
@@ -236,20 +197,11 @@ func TestSetDefaultModel_LegacyModelField(t *testing.T) {
 		},
 	}
 
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
+	output := captureStdout(func() {
+		err := setDefaultModel(configPath, cfg, "new-model")
+		assert.NoError(t, err)
+	})
 
-	err := setDefaultModel(configPath, cfg, "new-model")
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	output := buf.String()
-
-	assert.NoError(t, err)
 	assert.Contains(t, output, "Default model changed from 'legacy-old' to 'new-model'")
 }
 
@@ -349,20 +301,10 @@ func TestModelCommandExecution_Show(t *testing.T) {
 
 	cmd := NewModelCommand()
 
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err = cmd.RunE(cmd, []string{})
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	assert.NoError(t, err)
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	output := buf.String()
+	output := captureStdout(func() {
+		err = cmd.RunE(cmd, []string{})
+		assert.NoError(t, err)
+	})
 
 	assert.Contains(t, output, "Current default model: test-model")
 }
@@ -387,20 +329,10 @@ func TestModelCommandExecution_Set(t *testing.T) {
 
 	cmd := NewModelCommand()
 
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	err = cmd.RunE(cmd, []string{"new-model"})
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	assert.NoError(t, err)
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	output := buf.String()
+	output := captureStdout(func() {
+		err = cmd.RunE(cmd, []string{"new-model"})
+		assert.NoError(t, err)
+	})
 
 	assert.Contains(t, output, "Default model changed from 'old-model' to 'new-model'")
 }
@@ -414,10 +346,6 @@ func TestModelCommandExecution_TooManyArgs(t *testing.T) {
 }
 
 func TestListAvailableModels_MarkerLogic(t *testing.T) {
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
@@ -431,14 +359,9 @@ func TestListAvailableModels_MarkerLogic(t *testing.T) {
 		},
 	}
 
-	listAvailableModels(cfg)
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	output := buf.String()
+	output := captureStdout(func() {
+		listAvailableModels(cfg)
+	})
 
 	assert.Contains(t, output, "  - first-model (openai/first)")
 	assert.Contains(t, output, "> - middle-model (openai/middle)")

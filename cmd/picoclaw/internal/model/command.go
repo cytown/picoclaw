@@ -9,6 +9,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
+// LocalModel is a special model name that indicates that the model is local and with or without api_key.
 const LocalModel = "local-model"
 
 func NewModelCommand() *cobra.Command {
@@ -72,9 +73,14 @@ func listAvailableModels(cfg *config.Config) {
 		return
 	}
 
+	defaultModel := cfg.Agents.Defaults.ModelName
+	if defaultModel == "" {
+		defaultModel = cfg.Agents.Defaults.Model
+	}
+
 	for _, model := range cfg.ModelList {
 		marker := "  "
-		if model.ModelName == cfg.Agents.Defaults.ModelName {
+		if model.ModelName == defaultModel {
 			marker = "> "
 		}
 		if model.APIKey == "" {
@@ -95,7 +101,7 @@ func setDefaultModel(configPath string, cfg *config.Config, modelName string) er
 	}
 
 	if !modelFound && modelName != LocalModel {
-		return fmt.Errorf("Model '%s' not found in config.", modelName)
+		return fmt.Errorf("can not found model '%s' in config", modelName)
 	}
 
 	// Update the default model
