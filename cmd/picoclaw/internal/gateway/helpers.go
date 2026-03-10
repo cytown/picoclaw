@@ -222,6 +222,7 @@ func gatewayCmd(debug bool) error {
 			cronService.Stop()
 			mediaStore.Stop()
 			agentLoop.Stop()
+			agentLoop.Close()
 			logger.Info("✓ Gateway stopped")
 
 			return nil

@@ -430,6 +430,11 @@ func (al *AgentLoop) Stop() {
 	al.running.Store(false)
 }
 
+// Close releases resources held by agent session stores. Call after Stop.
+func (al *AgentLoop) Close() {
+	al.registry.Close()
+}
+
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 	registry := al.GetRegistry()
 	for _, agentID := range registry.ListAgentIDs() {
