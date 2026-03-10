@@ -43,30 +43,7 @@ func init() {
 
 		consoleWriter := zerolog.ConsoleWriter{
 			Out:        os.Stdout,
-			TimeFormat: "15:04:05",
-			NoColor:    false,
-		}
-
-		consoleWriter.FormatLevel = func(i any) string {
-			level, ok := i.(string)
-			if !ok {
-				return fmt.Sprintf("| %-5s |", i)
-			}
-
-			switch strings.ToUpper(level) {
-			case "DEBUG":
-				return "| \x1b[36mDBG\x1b[0m |"
-			case "INFO":
-				return "| \x1b[32mINF\x1b[0m |"
-			case "WARN":
-				return "| \x1b[33mWRN\x1b[0m |"
-			case "ERROR":
-				return "| \x1b[31mERR\x1b[0m |"
-			case "FATAL":
-				return "| \x1b[35mFTL\x1b[0m |"
-			default:
-				return fmt.Sprintf("| %-5s |", level)
-			}
+			TimeFormat: "15:04:05", // TODO: make it configurable???
 		}
 
 		logger = zerolog.New(consoleWriter).With().Timestamp().Logger()
@@ -164,9 +141,9 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 
 	// Build combined field with component and caller
 	if component != "" {
-		event.Str("caller", fmt.Sprintf("%-6s | %s:%d (%s)", component, callerFile, callerLine, callerFunc))
+		event.Str("caller", fmt.Sprintf("%-6s %s:%d (%s)", component, callerFile, callerLine, callerFunc))
 	} else {
-		event.Str("caller", fmt.Sprintf("<none> | %s:%d (%s)", callerFile, callerLine, callerFunc))
+		event.Str("caller", fmt.Sprintf("<none> %s:%d (%s)", callerFile, callerLine, callerFunc))
 	}
 
 	for k, v := range fields {
@@ -379,23 +356,4 @@ func (b *Logger) WithLevels(levels map[int]LogLevel) *Logger {
 // NewLogger creates a new logger instance with optional component name
 func NewLogger(component string) *Logger {
 	return &Logger{component: component}
-}
-
-// for debugging logger only
-//
-//nolint:unused
-func debugCallerInfo() {
-	for i := 2; i < 15; i++ {
-		pc, file, line, ok := runtime.Caller(i)
-		if !ok {
-			continue
-		}
-
-		fn := runtime.FuncForPC(pc)
-		if fn == nil {
-			continue
-		}
-
-		fmt.Println(file, line)
-	}
 }
