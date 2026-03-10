@@ -270,10 +270,6 @@ func gatewayCmd(debug bool) error {
 			}
 			provider = newProvider
 
-			// Update agent loop provider and models
-			//agentLoop.SetProvider(provider, newCfg)
-
-			cfg = newCfg
 			logger.Info("  ✓ Provider and configuration reloaded successfully (thread-safe)")
 		}
 	}

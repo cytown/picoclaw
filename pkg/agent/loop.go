@@ -395,19 +395,18 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 
 // ReloadProviderAndConfig atomically swaps the provider and config with proper synchronization.
 // It uses a context to allow timeout control from the caller.
-// Returns an error if the reload fails or context is cancelled.
-func (al *AgentLoop) ReloadProviderAndConfig(ctx context.Context, provider providers.LLMProvider, cfg *config.Config) error {
+// Returns an error if the reload fails or context is canceled.
+func (al *AgentLoop) ReloadProviderAndConfig(
+	ctx context.Context,
+	provider providers.LLMProvider,
+	cfg *config.Config,
+) error {
 	// Validate inputs
 	if provider == nil {
 		return fmt.Errorf("provider cannot be nil")
 	}
 	if cfg == nil {
 		return fmt.Errorf("config cannot be nil")
-	}
-
-	// Check context before starting
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("context cancelled before reload: %w", err)
 	}
 
 	// Create new registry with updated config and provider
@@ -434,12 +433,12 @@ func (al *AgentLoop) ReloadProviderAndConfig(ctx context.Context, provider provi
 			return fmt.Errorf("registry creation failed (nil result)")
 		}
 	case <-ctx.Done():
-		return fmt.Errorf("context cancelled during registry creation: %w", ctx.Err())
+		return fmt.Errorf("context canceled during registry creation: %w", ctx.Err())
 	}
 
 	// Check context again before proceeding
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("context cancelled after registry creation: %w", err)
+		return fmt.Errorf("context canceled after registry creation: %w", err)
 	}
 
 	// Ensure shared tools are re-registered on the new registry
@@ -469,8 +468,8 @@ func (al *AgentLoop) ReloadProviderAndConfig(ctx context.Context, provider provi
 			case <-time.After(100 * time.Millisecond):
 				stateful.Close()
 			case <-ctx.Done():
-				// Context cancelled, close immediately but log warning
-				logger.WarnCF("agent", "Context cancelled during provider cleanup, forcing close",
+				// Context canceled, close immediately but log warning
+				logger.WarnCF("agent", "Context canceled during provider cleanup, forcing close",
 					map[string]any{"error": ctx.Err()})
 				stateful.Close()
 			}
