@@ -128,6 +128,24 @@ func getCallerInfo() (string, int, string) {
 	return "???", 0, "???"
 }
 
+//nolint:zerologlint
+func getEvent(logger zerolog.Logger, level LogLevel) *zerolog.Event {
+	switch level {
+	case zerolog.DebugLevel:
+		return logger.Debug()
+	case zerolog.InfoLevel:
+		return logger.Info()
+	case zerolog.WarnLevel:
+		return logger.Warn()
+	case zerolog.ErrorLevel:
+		return logger.Error()
+	case zerolog.FatalLevel:
+		return logger.Fatal()
+	default:
+		return logger.Info()
+	}
+}
+
 func logMessage(level LogLevel, component string, message string, fields map[string]any) {
 	if level < currentLevel {
 		return
@@ -135,21 +153,7 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 
 	callerFile, callerLine, callerFunc := getCallerInfo()
 
-	var event *zerolog.Event
-	switch level {
-	case zerolog.DebugLevel:
-		event = logger.Debug()
-	case zerolog.InfoLevel:
-		event = logger.Info()
-	case zerolog.WarnLevel:
-		event = logger.Warn()
-	case zerolog.ErrorLevel:
-		event = logger.Error()
-	case zerolog.FatalLevel:
-		event = logger.Error()
-	default:
-		event = logger.Info()
-	}
+	event := getEvent(logger, level)
 
 	// Build combined field with component and caller
 	if component != "" {
@@ -166,21 +170,7 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 
 	// Also log to file if enabled
 	if fileLogger.GetLevel() != zerolog.NoLevel {
-		var fileEvent *zerolog.Event
-		switch level {
-		case zerolog.DebugLevel:
-			fileEvent = fileLogger.Debug()
-		case zerolog.InfoLevel:
-			fileEvent = fileLogger.Info()
-		case zerolog.WarnLevel:
-			fileEvent = fileLogger.Warn()
-		case zerolog.ErrorLevel:
-			fileEvent = fileLogger.Error()
-		case zerolog.FatalLevel:
-			fileEvent = fileLogger.Error()
-		default:
-			fileEvent = fileLogger.Info()
-		}
+		fileEvent := getEvent(fileLogger, level)
 
 		if component != "" {
 			fileEvent.Str("component", component)
@@ -278,94 +268,4 @@ func FatalF(message string, fields map[string]any) {
 
 func FatalCF(component string, message string, fields map[string]any) {
 	logMessage(FATAL, component, message, fields)
-}
-
-// Logger implements common Logger interface
-type Logger struct {
-	component string
-	levels    map[int]LogLevel
-}
-
-// Debug logs debug messages
-func (b *Logger) Debug(v ...any) {
-	logMessage(DEBUG, b.component, fmt.Sprint(v...), nil)
-}
-
-// Info logs info messages
-func (b *Logger) Info(v ...any) {
-	logMessage(INFO, b.component, fmt.Sprint(v...), nil)
-}
-
-// Warn logs warning messages
-func (b *Logger) Warn(v ...any) {
-	logMessage(WARN, b.component, fmt.Sprint(v...), nil)
-}
-
-// Error logs error messages
-func (b *Logger) Error(v ...any) {
-	logMessage(ERROR, b.component, fmt.Sprint(v...), nil)
-}
-
-// Debugf logs formatted debug messages
-func (b *Logger) Debugf(format string, v ...any) {
-	logMessage(DEBUG, b.component, fmt.Sprintf(format, v...), nil)
-}
-
-// Infof logs formatted info messages
-func (b *Logger) Infof(format string, v ...any) {
-	logMessage(INFO, b.component, fmt.Sprintf(format, v...), nil)
-}
-
-// Warnf logs formatted warning messages
-func (b *Logger) Warnf(format string, v ...any) {
-	logMessage(WARN, b.component, fmt.Sprintf(format, v...), nil)
-}
-
-// Warningf logs formatted warning messages
-func (b *Logger) Warningf(format string, v ...any) {
-	logMessage(WARN, b.component, fmt.Sprintf(format, v...), nil)
-}
-
-// Errorf logs formatted error messages
-func (b *Logger) Errorf(format string, v ...any) {
-	logMessage(ERROR, b.component, fmt.Sprintf(format, v...), nil)
-}
-
-// Fatalf logs formatted fatal messages and exits
-func (b *Logger) Fatalf(format string, v ...any) {
-	logMessage(FATAL, b.component, fmt.Sprintf(format, v...), nil)
-}
-
-// Log logs a message at a given level with caller information
-// the func name must be this because 3rd party loggers expect this
-// msgL: message level (DEBUG, INFO, WARN, ERROR, FATAL)
-// caller: unused parameter reserved for compatibility
-// format: format string
-// a: format arguments
-//
-//nolint:goprintffuncname
-func (b *Logger) Log(msgL, caller int, format string, a ...any) {
-	level := LogLevel(msgL)
-	if b.levels != nil {
-		if lvl, ok := b.levels[msgL]; ok {
-			level = lvl
-		}
-	}
-	logMessage(level, b.component, fmt.Sprintf(format, a...), nil)
-}
-
-// Sync flushes log buffer (no-op for this implementation)
-func (b *Logger) Sync() error {
-	return nil
-}
-
-// WithLevels sets log levels mapping for this logger
-func (b *Logger) WithLevels(levels map[int]LogLevel) *Logger {
-	b.levels = levels
-	return b
-}
-
-// NewLogger creates a new logger instance with optional component name
-func NewLogger(component string) *Logger {
-	return &Logger{component: component}
 }
