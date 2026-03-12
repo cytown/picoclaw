@@ -49,6 +49,8 @@ type AgentLoop struct {
 	cmdRegistry    *commands.Registry
 	mcp            mcpRuntime
 	mu             sync.RWMutex
+	// Track active requests for safe provider cleanup
+	activeRequests sync.WaitGroup
 }
 
 // processOptions configures how a message is processed
@@ -1059,6 +1061,9 @@ func (al *AgentLoop) runLLMIteration(
 		}
 
 		callLLM := func() (*providers.LLMResponse, error) {
+			al.activeRequests.Add(1)
+			defer al.activeRequests.Done()
+
 			if len(activeCandidates) > 1 && al.fallback != nil {
 				fbResult, fbErr := al.fallback.Execute(
 					ctx,
@@ -1716,6 +1721,7 @@ func (al *AgentLoop) retryLLMCall(
 	var err error
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
+		al.activeRequests.Add(1)
 		resp, err = agent.Provider.Chat(
 			ctx,
 			[]providers.Message{{Role: "user", Content: prompt}},
@@ -1727,6 +1733,8 @@ func (al *AgentLoop) retryLLMCall(
 				"prompt_cache_key": agent.ID,
 			},
 		)
+		al.activeRequests.Done()
+
 		if err == nil && resp != nil && resp.Content != "" {
 			return resp, nil
 		}

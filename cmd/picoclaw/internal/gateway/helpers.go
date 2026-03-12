@@ -488,9 +488,12 @@ func restartServices(
 	}
 
 	// Wire up voice transcription with new config
-	if transcriber := voice.DetectTranscriber(cfg); transcriber != nil {
-		al.SetTranscriber(transcriber)
-		logger.InfoCF("voice", "Transcription enabled (agent-level)", map[string]any{"provider": transcriber.Name()})
+	transcriber := voice.DetectTranscriber(cfg)
+	al.SetTranscriber(transcriber) // This will set it to nil if disabled
+	if transcriber != nil {
+		logger.InfoCF("voice", "Transcription re-enabled (agent-level)", map[string]any{"provider": transcriber.Name()})
+	} else {
+		logger.InfoCF("voice", "Transcription disabled", nil)
 	}
 
 	return nil
