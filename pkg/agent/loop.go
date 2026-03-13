@@ -1722,18 +1722,20 @@ func (al *AgentLoop) retryLLMCall(
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		al.activeRequests.Add(1)
-		resp, err = agent.Provider.Chat(
-			ctx,
-			[]providers.Message{{Role: "user", Content: prompt}},
-			nil,
-			agent.Model,
-			map[string]any{
-				"max_tokens":       agent.MaxTokens,
-				"temperature":      llmTemperature,
-				"prompt_cache_key": agent.ID,
-			},
-		)
-		al.activeRequests.Done()
+		resp, err = func() (*providers.LLMResponse, error) {
+			defer al.activeRequests.Done()
+			return agent.Provider.Chat(
+				ctx,
+				[]providers.Message{{Role: "user", Content: prompt}},
+				nil,
+				agent.Model,
+				map[string]any{
+					"max_tokens":       agent.MaxTokens,
+					"temperature":      llmTemperature,
+					"prompt_cache_key": agent.ID,
+				},
+			)
+		}()
 
 		if err == nil && resp != nil && resp.Content != "" {
 			return resp, nil

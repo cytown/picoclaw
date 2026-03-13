@@ -41,6 +41,14 @@ import (
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
+// Timeout constants for service operations
+const (
+	serviceRestartTimeout   = 30 * time.Second
+	serviceShutdownTimeout  = 30 * time.Second
+	providerReloadTimeout   = 30 * time.Second
+	gracefulShutdownTimeout = 15 * time.Second
+)
+
 // gatewayServices holds references to all running services
 type gatewayServices struct {
 	CronService      *cron.CronService
@@ -291,7 +299,7 @@ func shutdownGateway(
 		cp.Close()
 	}
 
-	stopAndCleanupServices(services, 15*time.Second)
+	stopAndCleanupServices(services, gracefulShutdownTimeout)
 
 	agentLoop.Stop()
 	agentLoop.Close()
@@ -320,7 +328,7 @@ func handleConfigReload(
 
 	// Stop all services before reloading
 	logger.Info("  Stopping all services...")
-	stopAndCleanupServices(services, 30*time.Second)
+	stopAndCleanupServices(services, serviceShutdownTimeout)
 
 	// Create new provider from updated config first to ensure validity
 	// This will use the correct API key and settings from newCfg.ModelList
@@ -329,7 +337,7 @@ func handleConfigReload(
 		logger.Errorf("  ⚠ Error creating new provider: %v", err)
 		logger.Warn("  Attempting to restart services with old provider and config...")
 		// Try to restart services with old configuration
-		if restartErr := restartServices(ctx, al, services, msgBus); restartErr != nil {
+		if restartErr := restartServices(al, services, msgBus); restartErr != nil {
 			logger.Errorf("  ⚠ Failed to restart services: %v", restartErr)
 		}
 		return fmt.Errorf("error creating new provider: %w", err)
@@ -342,7 +350,7 @@ func handleConfigReload(
 	// Use the atomic reload method on AgentLoop to safely swap provider and config.
 	// This handles locking internally to prevent races with in-flight LLM calls
 	// and concurrent reads of registry/config while the swap occurs.
-	reloadCtx, reloadCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	reloadCtx, reloadCancel := context.WithTimeout(context.Background(), providerReloadTimeout)
 	defer reloadCancel()
 
 	if err := al.ReloadProviderAndConfig(reloadCtx, newProvider, newCfg); err != nil {
@@ -352,7 +360,7 @@ func handleConfigReload(
 			cp.Close()
 		}
 		logger.Warn("  Attempting to restart services with old provider and config...")
-		if restartErr := restartServices(ctx, al, services, msgBus); restartErr != nil {
+		if restartErr := restartServices(al, services, msgBus); restartErr != nil {
 			logger.Errorf("  ⚠ Failed to restart services: %v", restartErr)
 		}
 		return fmt.Errorf("error reloading agent loop: %w", err)
@@ -363,7 +371,7 @@ func handleConfigReload(
 
 	// Restart all services with new config
 	logger.Info("  Restarting all services with new configuration...")
-	if err := restartServices(ctx, al, services, msgBus); err != nil {
+	if err := restartServices(al, services, msgBus); err != nil {
 		logger.Errorf("  ⚠ Error restarting services: %v", err)
 		return fmt.Errorf("error restarting services: %w", err)
 	}
@@ -374,11 +382,15 @@ func handleConfigReload(
 
 // restartServices restarts all services after a config reload
 func restartServices(
-	ctx context.Context,
 	al *agent.AgentLoop,
 	services *gatewayServices,
 	msgBus *bus.MessageBus,
 ) error {
+	// Create an independent context with timeout for service restart
+	// This prevents cancellation from the main loop context during reload
+	ctx, cancel := context.WithTimeout(context.Background(), serviceRestartTimeout)
+	defer cancel()
+
 	// Get current config from agent loop (which has been updated if this is a reload)
 	cfg := al.GetConfig()
 
