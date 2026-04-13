@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -3420,4 +3421,232 @@ func TestProcessMessage_ContextOverflow_AnthropicStyle(t *testing.T) {
 	if provider.calls != 2 {
 		t.Fatalf("expected 2 calls for retry, got %d", provider.calls)
 	}
+}
+
+func TestParallelMessageProcessing_DifferentSessionsProcessedConcurrently(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Track concurrent executions using a unique ID per turn
+	var mu sync.Mutex
+	activeTurns := make(map[string]bool)
+	maxConcurrent := 0
+	turnCounter := 0
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				MaxParallelTurns:  3, // Allow up to 3 concurrent turns
+			},
+		},
+		Session: config.SessionConfig{
+			DMScope: "per-peer",
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	defer msgBus.Close()
+
+	// Create a slow mock provider that tracks concurrency
+	provider := &concurrentMockProvider{
+		responseFunc: func(sessionKey string) string {
+			mu.Lock()
+			turnCounter++
+			turnID := fmt.Sprintf("turn-%d", turnCounter)
+			activeTurns[turnID] = true
+			currentActive := len(activeTurns)
+			if currentActive > maxConcurrent {
+				maxConcurrent = currentActive
+			}
+			mu.Unlock()
+
+			// Simulate some processing time
+			time.Sleep(100 * time.Millisecond)
+
+			mu.Lock()
+			delete(activeTurns, turnID)
+			mu.Unlock()
+
+			return fmt.Sprintf("Response %s", turnID)
+		},
+	}
+
+	al := NewAgentLoop(cfg, msgBus, provider)
+	defer al.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start the agent loop
+	go func() {
+		if err := al.Run(ctx); err != nil {
+			t.Logf("Agent loop error: %v", err)
+		}
+	}()
+
+	// Give the loop time to start
+	time.Sleep(50 * time.Millisecond)
+
+	// Send 3 messages from different sessions
+	sessions := []string{"user1", "user2", "user3"}
+	for i, session := range sessions {
+		msg := bus.InboundMessage{
+			Channel:  "telegram",
+			SenderID: session,
+			ChatID:   fmt.Sprintf("chat%d", i),
+			Content:  fmt.Sprintf("Hello from %s", session),
+			Peer: bus.Peer{
+				Kind: "direct",
+				ID:   session,
+			},
+		}
+		if err := msgBus.PublishInbound(context.Background(), msg); err != nil {
+			t.Fatalf("PublishInbound failed: %v", err)
+		}
+	}
+
+	// Wait for all messages to be processed
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify that we had concurrent executions
+	mu.Lock()
+	defer mu.Unlock()
+
+	if maxConcurrent < 2 {
+		t.Errorf("Expected at least 2 concurrent executions, got max %d", maxConcurrent)
+	}
+
+	t.Logf("Maximum concurrent executions: %d", maxConcurrent)
+}
+
+func TestParallelMessageProcessing_SameSessionProcessedSequentially(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	var mu sync.Mutex
+	turnIDs := make(map[string]bool)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				MaxParallelTurns:  3,
+			},
+		},
+		Session: config.SessionConfig{
+			DMScope: "per-peer",
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	defer msgBus.Close()
+
+	al := NewAgentLoop(cfg, msgBus, &concurrentMockProvider{
+		responseFunc: func(sessionKey string) string {
+			return "ok"
+		},
+	})
+	defer al.Close()
+
+	sub := al.SubscribeEvents(64)
+
+	go func() {
+		for evt := range sub.C {
+			if evt.Kind == EventKindTurnStart {
+				mu.Lock()
+				turnIDs[evt.Meta.TurnID] = true
+				mu.Unlock()
+			}
+		}
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		if err := al.Run(ctx); err != nil {
+			t.Logf("Agent loop error: %v", err)
+		}
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Send 3 messages from the SAME session - only one turn should be created;
+	// subsequent messages should be enqueued to the steering queue and processed
+	// within the same turn (not as separate concurrent turns).
+	for i := 0; i < 3; i++ {
+		msg := bus.InboundMessage{
+			Channel:  "telegram",
+			SenderID: "user1",
+			ChatID:   "chat1",
+			Content:  fmt.Sprintf("Message %d", i+1),
+			Peer: bus.Peer{
+				Kind: "direct",
+				ID:   "user1",
+			},
+		}
+		if err := msgBus.PublishInbound(context.Background(), msg); err != nil {
+			t.Fatalf("PublishInbound failed: %v", err)
+		}
+	}
+
+	// Wait for processing to complete
+	time.Sleep(500 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Only 1 turn ID should have been created — proving messages were
+	// serialized into a single turn rather than spawning concurrent turns.
+	if len(turnIDs) != 1 {
+		t.Errorf("Expected 1 turn (others queued to steering), got %d: %v", len(turnIDs), turnIDs)
+	}
+}
+
+// concurrentMockProvider is a mock provider that allows tracking concurrency
+type concurrentMockProvider struct {
+	responseFunc func(sessionKey string) string
+}
+
+func (p *concurrentMockProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	// Extract session key from the message metadata or content
+	sessionKey := "unknown"
+	// Last message is usually the user message, use it for tracking
+	if len(messages) > 0 {
+		// Use the full messages slice length as a simple differentiator
+		sessionKey = fmt.Sprintf("session-messages-%d", len(messages))
+	}
+
+	response := "Mock response"
+	if p.responseFunc != nil {
+		response = p.responseFunc(sessionKey)
+	}
+
+	return &providers.LLMResponse{
+		Content:   response,
+		ToolCalls: []providers.ToolCall{},
+	}, nil
+}
+
+func (p *concurrentMockProvider) GetDefaultModel() string {
+	return "test-model"
 }

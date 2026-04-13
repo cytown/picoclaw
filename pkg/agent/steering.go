@@ -326,8 +326,8 @@ func (al *AgentLoop) agentForSession(sessionKey string) *AgentInstance {
 //
 // If no steering messages are pending, it returns an empty string.
 func (al *AgentLoop) Continue(ctx context.Context, sessionKey, channel, chatID string) (string, error) {
-	if active := al.GetActiveTurn(); active != nil {
-		return "", fmt.Errorf("turn %s is still active", active.TurnID)
+	if active := al.GetActiveTurnBySession(sessionKey); active != nil {
+		return "", fmt.Errorf("turn %s is still active for session %q", active.TurnID, sessionKey)
 	}
 	if err := al.ensureHooksInitialized(ctx); err != nil {
 		return "", err
@@ -376,6 +376,10 @@ func (al *AgentLoop) InterruptGraceful(hint string) error {
 	return nil
 }
 
+// InterruptHard aborts an arbitrary active turn. In parallel mode this may
+// target the wrong session. Prefer HardAbort(sessionKey) instead.
+//
+// Deprecated: Use HardAbort(sessionKey) for session-safe aborts.
 func (al *AgentLoop) InterruptHard() error {
 	ts := al.getAnyActiveTurnState()
 	if ts == nil {

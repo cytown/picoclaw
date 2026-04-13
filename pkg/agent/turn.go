@@ -143,7 +143,8 @@ func (al *AgentLoop) clearActiveTurn(ts *turnState) {
 
 func (al *AgentLoop) getActiveTurnState(sessionKey string) *turnState {
 	if val, ok := al.activeTurnStates.Load(sessionKey); ok {
-		return val.(*turnState)
+		ts, _ := val.(*turnState) // reservation sentinel returns (nil, false)
+		return ts
 	}
 	return nil
 }
@@ -152,8 +153,11 @@ func (al *AgentLoop) getActiveTurnState(sessionKey string) *turnState {
 func (al *AgentLoop) getAnyActiveTurnState() *turnState {
 	var firstTS *turnState
 	al.activeTurnStates.Range(func(key, value any) bool {
-		firstTS = value.(*turnState)
-		return false // stop after first
+		if ts, ok := value.(*turnState); ok {
+			firstTS = ts
+			return false
+		}
+		return true // skip reservation sentinel, continue searching
 	})
 	return firstTS
 }
@@ -163,8 +167,11 @@ func (al *AgentLoop) GetActiveTurn() *ActiveTurnInfo {
 	// In the new architecture, there can be multiple concurrent turns
 	var firstTS *turnState
 	al.activeTurnStates.Range(func(key, value any) bool {
-		firstTS = value.(*turnState)
-		return false // stop after first
+		if ts, ok := value.(*turnState); ok {
+			firstTS = ts
+			return false
+		}
+		return true // skip nil sentinel, continue searching
 	})
 	if firstTS == nil {
 		return nil
@@ -426,7 +433,9 @@ func (ts *turnState) Finish(isHardAbort bool) {
 		ts.mu.RUnlock()
 		for _, childID := range children {
 			if val, ok := ts.al.activeTurnStates.Load(childID); ok {
-				val.(*turnState).Finish(true)
+				if child, ok := val.(*turnState); ok {
+					child.Finish(true)
+				}
 			}
 		}
 	}
