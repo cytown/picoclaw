@@ -660,6 +660,71 @@ func TestAsFloat(t *testing.T) {
 	}
 }
 
+// --- ExtractProtocol tests ---
+
+func TestExtractProtocol(t *testing.T) {
+	tests := []struct {
+		name         string
+		model        string
+		wantProtocol string
+		wantModelID  string
+	}{
+		{"openai with prefix", "openai/gpt-4o", "openai", "gpt-4o"},
+		{"anthropic with prefix", "anthropic/claude-sonnet-4.6", "anthropic", "claude-sonnet-4.6"},
+		{"no prefix defaults to openai", "gpt-4o", "openai", "gpt-4o"},
+		{"groq with prefix", "groq/llama-3.1-70b", "groq", "llama-3.1-70b"},
+		{"empty string", "", "openai", ""},
+		{"with whitespace", "  openai/gpt-4  ", "openai", "gpt-4"},
+		{"multiple slashes", "nvidia/meta/llama-3.1-8b", "nvidia", "meta/llama-3.1-8b"},
+		{"azure with prefix", "azure/my-gpt5-deployment", "azure", "my-gpt5-deployment"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			protocol, modelID := ExtractProtocol(tt.model)
+			if protocol != tt.wantProtocol {
+				t.Errorf("ExtractProtocol(%q) protocol = %q, want %q", tt.model, protocol, tt.wantProtocol)
+			}
+			if modelID != tt.wantModelID {
+				t.Errorf("ExtractProtocol(%q) modelID = %q, want %q", tt.model, modelID, tt.wantModelID)
+			}
+		})
+	}
+}
+
+// --- NormalizeAnthropicBaseURL tests ---
+
+func TestNormalizeAnthropicBaseURL(t *testing.T) {
+	const defaultURL = "https://api.anthropic.com"
+	const defaultURLWithV1 = "https://api.anthropic.com/v1"
+
+	tests := []struct {
+		name           string
+		apiBase        string
+		defaultBase    string
+		appendV1Suffix bool
+		expected       string
+	}{
+		{"empty with v1", "", defaultURLWithV1, true, defaultURLWithV1},
+		{"empty without v1", "", defaultURL, false, defaultURL},
+		{"URL without v1 gets it appended", "https://api.example.com/anthropic", defaultURLWithV1, true, "https://api.example.com/anthropic/v1"},
+		{"URL without v1 stays as-is", "https://api.example.com/anthropic", defaultURL, false, "https://api.example.com/anthropic"},
+		{"URL with v1 remains unchanged when appending", "https://api.example.com/v1", defaultURLWithV1, true, "https://api.example.com/v1"},
+		{"URL with v1 gets it stripped when not appending", "https://api.example.com/v1", defaultURL, false, "https://api.example.com"},
+		{"trailing slash cleaned with v1", "https://api.example.com/anthropic/", defaultURLWithV1, true, "https://api.example.com/anthropic/v1"},
+		{"trailing slash cleaned without v1", "https://api.example.com/anthropic/", defaultURL, false, "https://api.example.com/anthropic"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NormalizeAnthropicBaseURL(tt.apiBase, tt.defaultBase, tt.appendV1Suffix)
+			if got != tt.expected {
+				t.Errorf("NormalizeAnthropicBaseURL(%q, %q, %v) = %q, want %q",
+					tt.apiBase, tt.defaultBase, tt.appendV1Suffix, got, tt.expected)
+			}
+		})
+	}
+}
+
 // --- WrapHTMLResponseError tests ---
 
 func TestWrapHTMLResponseError(t *testing.T) {

@@ -303,7 +303,7 @@ func normalizeGeminiModel(model string) string {
 	model = strings.TrimSpace(model)
 	model = strings.TrimPrefix(model, "models/")
 	if strings.Contains(model, "/") {
-		_, modelID := extractProtocol(model)
+		_, modelID := common.ExtractProtocol(model)
 		if modelID != "" {
 			return modelID
 		}

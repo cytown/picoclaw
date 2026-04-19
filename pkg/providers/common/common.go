@@ -478,6 +478,69 @@ func AsInt(v any) (int, bool) {
 	}
 }
 
+// ExtractProtocol extracts the effective protocol and model identifier from a
+// model configuration.
+//
+// The explicit Provider field takes precedence. When Provider is empty, the
+// protocol is inferred from Model. Plain model names default to "openai".
+// Provider-prefixed models strip the first slash-separated segment from the
+// returned model ID.
+//
+// The returned protocol is normalized to the provider's canonical spelling.
+// Examples:
+//   - Model "openai/gpt-4o" -> ("openai", "gpt-4o")
+//   - Model "nvidia/z-ai/glm-5.1" -> ("nvidia", "z-ai/glm-5.1")
+//   - Provider "nvidia", Model "z-ai/glm-5.1" -> ("nvidia", "z-ai/glm-5.1")
+//   - Provider "openai", Model "openai/gpt-4o" -> ("openai", "openai/gpt-4o")
+//   - Model "gpt-4o" -> ("openai", "gpt-4o")
+func ExtractProtocol(model string) (protocol, modelID string) {
+	if cfg == nil {
+		return "", ""
+	}
+
+	model := strings.TrimSpace(cfg.Model)
+	if provider := strings.TrimSpace(cfg.Provider); provider != "" {
+		return NormalizeProvider(provider), model
+	}
+	if model == "" {
+		return "", ""
+	}
+
+	protocol, rest, found := strings.Cut(model, "/")
+	if !found {
+		return "openai", model
+	}
+	protocol = strings.TrimSpace(protocol)
+	if protocol == "" {
+		return "", strings.TrimSpace(rest)
+	}
+	return NormalizeProvider(protocol), strings.TrimSpace(rest)
+}
+
+// NormalizeAnthropicBaseURL ensures the Anthropic base URL is properly formatted.
+// It removes a trailing /v1 suffix if present (to avoid duplication), then
+// re-appends /v1 when appendV1Suffix is true. An empty apiBase falls back to
+// defaultBaseURL.
+func NormalizeAnthropicBaseURL(apiBase, defaultBaseURL string, appendV1Suffix bool) string {
+	base := strings.TrimSpace(apiBase)
+	if base == "" {
+		return defaultBaseURL
+	}
+
+	base = strings.TrimRight(base, "/")
+	if before, ok := strings.CutSuffix(base, "/v1"); ok {
+		base = before
+	}
+	if base == "" {
+		return defaultBaseURL
+	}
+
+	if appendV1Suffix {
+		return base + "/v1"
+	}
+	return base
+}
+
 // AsFloat converts various numeric types to float64.
 func AsFloat(v any) (float64, bool) {
 	switch val := v.(type) {
